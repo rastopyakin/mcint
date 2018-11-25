@@ -5,16 +5,23 @@
 #include <random>
 #include <atomic>
 #include <mutex>
+#include <list>
 #include <iostream>
 
 namespace mc {
 
     template <class ValType>
     struct mc_chunk {
+        mc_chunk() = default;
         ValType M1 {};         // mean value
         ValType M2 {};         // squared mean value
         std::size_t  calls_num = 0;
     };
+
+    template<class ValType>
+    auto make_chunk(ValType M1, ValType M2, std::size_t calls_num) {
+        return mc_chunk<ValType>{M1, M2, calls_num};
+    }
 
     template <class Func, class ValType, class ArgType = ValType,
               class Gen = std::mt19937_64>
@@ -72,12 +79,46 @@ namespace mc {
         std::atomic<bool> stop_flag {false};
     };
 
-    class collector {};
-
-    class naive_integrator {};
-
     template <class Func, class ValType, class ArgType, class Gen>
     typename Gen::result_type worker<Func, ValType, ArgType, Gen>::seed_counter = 0;
+
+    template<class WorkerT>
+    class pool {};
+
+    template <class Func, class ValType, class ArgType,
+              class Gen>
+    class pool<worker<Func, ValType, ArgType, Gen>> {
+    public:
+        using worker_t = worker<Func, ValType, ArgType, Gen>;
+        pool(Func f, std::size_t calls_num,
+             std::size_t workers_num = std::thread::hardware_concurrency()) {
+            // TODO: workers_num may be equal to 0
+            for (int i = 0; i < workers_num; i++)
+                workers.emplace_back(f, calls_num);
+        }
+        void stop() {
+            for (auto &wk : workers)
+                wk.stop();
+        }
+        auto get_current_stat() const {
+            mc_chunk<ValType> chunk;
+            for (const auto &wk : workers) {
+                auto temp = wk.get_current_stat();
+                chunk.M1 += temp.M1*temp.calls_num;
+                chunk.M2 += temp.M2*temp.calls_num;
+                chunk.calls_num += temp.calls_num;
+            }
+            chunk.M1 /= chunk.calls_num;
+            chunk.M2 /= chunk.calls_num;
+            return chunk;
+        }
+    private:
+        std::list<worker_t> workers;
+    };
+
+    class governor {};
+
+    class naive_integrator {};
 
 }
 
