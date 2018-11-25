@@ -5,6 +5,7 @@
 #include <random>
 #include <atomic>
 #include <mutex>
+#include <cmath>
 #include <list>
 #include <iostream>
 
@@ -21,6 +22,16 @@ namespace mc {
     template<class ValType>
     auto make_chunk(ValType M1, ValType M2, std::size_t calls_num) {
         return mc_chunk<ValType>{M1, M2, calls_num};
+    }
+
+    template<class ValType>
+    auto variance(const mc_chunk<ValType> &chunk) {
+        return (chunk.M2 - chunk.M1*chunk.M1)*chunk.calls_num/(chunk.calls_num - 1);
+    }
+
+    template<class ValType>
+    auto error(const mc_chunk<ValType> &chunk) {
+        return std::sqrt(variance(chunk)/chunk.calls_num);
     }
 
     template <class Func, class ValType, class ArgType = ValType,
