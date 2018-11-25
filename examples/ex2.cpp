@@ -27,7 +27,8 @@ int main(int argc, char *argv[]) {
 
     auto f = [] (auto x) {return exp(x)+1;};
     std::size_t calls_per_update = 1e6;
-    mc::pool<mc::worker<decltype(f), double>> pool{f, calls_per_update};
+    std::size_t workers_num = std::thread::hardware_concurrency();
+    mc::pool<mc::worker<decltype(f), double>> pool{workers_num, f, calls_per_update};
     double error_goal = 3.0e-5;
     std::cout.precision(10);
     while (true) {

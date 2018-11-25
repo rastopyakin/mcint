@@ -38,6 +38,9 @@ namespace mc {
               class Gen = std::mt19937_64>
     class worker {
     public:
+        using value_t = ValType;
+        using func_t = Func;
+
         worker(const Func& f, std::size_t calls_num) :
             integrand{f}, calls_per_chunk(calls_num) {
                 seed = seed_counter++;
@@ -94,25 +97,23 @@ namespace mc {
     typename Gen::result_type worker<Func, ValType, ArgType, Gen>::seed_counter = 0;
 
     template<class WorkerT>
-    class pool {};
-
-    template <class Func, class ValType, class ArgType,
-              class Gen>
-    class pool<worker<Func, ValType, ArgType, Gen>> {
+    class pool {
     public:
-        using worker_t = worker<Func, ValType, ArgType, Gen>;
-        pool(Func f, std::size_t calls_num,
-             std::size_t workers_num = std::thread::hardware_concurrency()) {
-            // TODO: workers_num may be equal to 0
+        using worker_t = WorkerT;
+        using value_t = typename WorkerT::value_t;
+        using func_t = typename WorkerT::func_t;
+
+        template<class ... Args>
+        pool(std::size_t workers_num, Args ... args) {
             for (int i = 0; i < workers_num; i++)
-                workers.emplace_back(f, calls_num);
+                workers.emplace_back(args...);
         }
         void stop() {
             for (auto &wk : workers)
                 wk.stop();
         }
         auto get_current_stat() const {
-            mc_chunk<ValType> chunk;
+            mc_chunk<value_t> chunk;
             for (const auto &wk : workers) {
                 auto temp = wk.get_current_stat();
                 chunk.M1 += temp.M1*temp.calls_num;
