@@ -7,7 +7,10 @@
 #include <mutex>
 #include <cmath>
 #include <list>
+#include <memory>
 #include <iostream>
+
+#include "buffer.hpp"
 
 namespace mc {
 
@@ -31,7 +34,10 @@ namespace mc {
 
     template<class ValType>
     auto error(const mc_chunk<ValType> &chunk) {
-        return std::sqrt(variance(chunk)/chunk.calls_num);
+        if (chunk.calls_num != 0)
+            return std::sqrt(variance(chunk)/chunk.calls_num);
+        else
+            return std::numeric_limits<ValType>::max();
     }
 
     template <class Func, class ValType, class ArgType = ValType,
@@ -75,8 +81,8 @@ namespace mc {
                 update(M1, M2, chunks_num - 1); // pass num of current chunks
             }
         }
-
-        void update(ValType M1, ValType M2, std::size_t chunks_num) {
+    protected:
+        virtual void update(ValType M1, ValType M2, std::size_t chunks_num) {
             std::lock_guard<std::mutex> lk{lock};
             current.M1 = (chunks_num*current.M1 + M1)/(chunks_num + 1);
             current.M2 = (chunks_num*current.M2 + M2)/(chunks_num + 1);
@@ -87,14 +93,67 @@ namespace mc {
         typename Gen::result_type seed;
         mutable std::mutex lock;
         mc_chunk<ValType> current;
-        Func integrand;
-        std::size_t calls_per_chunk;
         std::thread work_th;
         std::atomic<bool> stop_flag {false};
+        Func integrand;
+    protected:
+        std::size_t calls_per_chunk;
     };
 
     template <class Func, class ValType, class ArgType, class Gen>
     typename Gen::result_type worker<Func, ValType, ArgType, Gen>::seed_counter = 0;
+
+    template<class ValType>
+    class progress_manager {
+    public:
+        progress_manager() {
+            th = std::thread(&progress_manager<ValType>::process, this);
+        }
+        void send_chunk(mc_chunk<ValType> chunk) {
+            chunks_buf.push(chunk);
+        }
+        ~progress_manager() {
+            chunks_buf.disable_waiting();
+            th.join();
+        }
+    private:
+        void process() {
+            while (true) {
+                auto chunk = chunks_buf.pop_or_wait();
+                if (chunk) {
+                    global.M1 = (global.M1*global.calls_num + chunk->M1*chunk->calls_num)/(global.calls_num + chunk->calls_num);
+                    global.M2 = (global.M2*global.calls_num + chunk->M2*chunk->calls_num)/(global.calls_num + chunk->calls_num);
+                    global.calls_num += chunk->calls_num;
+                } else break;
+                std::cout << "current estimate: "  << global.M1  << std::endl;
+                std::cout << "variance estimate: " << variance(global) << std::endl;
+                std::cout << "error estimate: " << error(global) << std::endl;
+                std::cout << "calls number: " << global.calls_num << std::endl;
+                std::cout << std::endl;
+            }
+        }
+        mc_chunk<ValType> global {};
+        buffer<mc_chunk<ValType>> chunks_buf;
+        std::thread th;
+    };
+
+    template <class Func, class ValType, class ArgType = ValType,
+              class Gen = std::mt19937_64>
+    class p_worker : public worker<Func, ValType, ArgType, Gen> {
+    public:
+        using worker_t = worker<Func, ValType, ArgType, Gen>;
+        using pm_t = progress_manager<ValType>;
+        p_worker(Func f, std::size_t calls,
+                 const std::shared_ptr<pm_t> &p) :
+            worker_t{f, calls}, pm{p} {
+            }
+    protected:
+        void update(ValType M1, ValType M2, std::size_t chunks_num) override {
+            worker_t::update(M1, M2, chunks_num);
+            pm->send_chunk(make_chunk(M1, M2, this->calls_per_chunk));
+        }
+        std::shared_ptr<pm_t> pm;
+    };
 
     template<class WorkerT>
     class pool {
@@ -127,8 +186,6 @@ namespace mc {
     private:
         std::list<worker_t> workers;
     };
-
-    class governor {};
 
     class naive_integrator {};
 
