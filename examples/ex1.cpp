@@ -10,7 +10,7 @@ namespace chr=std::chrono;
 
 int main(int argc, char *argv[]) {
 
-    auto f = [] (auto x) {return exp(x)+1;};
+    auto f = [] (auto x) {return std::exp(x)+1;};
     std::size_t calls_per_update_num = 1e6;
     mc::worker<decltype(f), double>
         wk{f, calls_per_update_num}, wk1{f, calls_per_update_num};

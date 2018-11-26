@@ -9,6 +9,9 @@
 #include <list>
 #include <memory>
 #include <iostream>
+#include <iomanip>
+#include <chrono>
+#include <future>
 
 #include "buffer.hpp"
 
@@ -106,7 +109,7 @@ namespace mc {
     template<class ValType>
     class progress_manager {
     public:
-        progress_manager() {
+        progress_manager(ValType error_goal) : err_goal(error_goal) {
             th = std::thread(&progress_manager<ValType>::process, this);
         }
         void send_chunk(mc_chunk<ValType> chunk) {
@@ -116,24 +119,42 @@ namespace mc {
             chunks_buf.disable_waiting();
             th.join();
         }
+        void wait_for_completion() {
+            finished.get_future().wait();
+        }
     private:
         void process() {
-            while (true) {
+            auto start = std::chrono::steady_clock::now();
+            auto next_time_to_log = start;
+            while (error(global) > err_goal) {
+
                 auto chunk = chunks_buf.pop_or_wait();
                 if (chunk) {
                     global.M1 = (global.M1*global.calls_num + chunk->M1*chunk->calls_num)/(global.calls_num + chunk->calls_num);
                     global.M2 = (global.M2*global.calls_num + chunk->M2*chunk->calls_num)/(global.calls_num + chunk->calls_num);
                     global.calls_num += chunk->calls_num;
                 } else break;
-                std::cout << "current estimate: "  << global.M1  << std::endl;
-                std::cout << "variance estimate: " << variance(global) << std::endl;
-                std::cout << "error estimate: " << error(global) << std::endl;
-                std::cout << "calls number: " << global.calls_num << std::endl;
-                std::cout << std::endl;
+                auto now = std::chrono::steady_clock::now();
+                if (now > next_time_to_log) {
+                    std::cout << "current estimate: "  << global.M1  << std::endl;
+                    std::cout << "error estimate: " << error(global) << std::endl;
+                    std::cout << 100*progress() << "% completed\n";
+                    std::cout << "calls number: " << global.calls_num << std::endl;
+                    std::cout << std::endl;
+                    next_time_to_log = now + std::chrono::seconds(1);
+                }
             }
+            finished.set_value();
         }
+        ValType progress() {
+            ValType e = err_goal/error(global);
+            return e*e;
+        }
+    private:
+        ValType err_goal;
         mc_chunk<ValType> global {};
         buffer<mc_chunk<ValType>> chunks_buf;
+        std::promise<void> finished;
         std::thread th;
     };
 

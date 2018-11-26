@@ -5,24 +5,6 @@
 #include <functional>
 #include "mcint.hpp"
 
-template<class Func> struct arg_type {};
-
-template<class RetType, class ArgType>
-struct arg_type<RetType(ArgType)> {
-    using type = ArgType;
-};
-
-struct Foo {
-    double operator()(double x) {
-        return 0;
-    }
-};
-
-template<class T>
-void print_type(T t) {
-    std::cout << __PRETTY_FUNCTION__ << std::endl;
-}
-
 int main(int argc, char *argv[]) {
 
     auto f = [] (auto x) {return exp(x)+1;};
